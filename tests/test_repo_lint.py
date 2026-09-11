@@ -200,3 +200,32 @@ def test_cli_json_shape():
     payload = json.loads(done.stdout)
     assert set(payload["summary"]) == {"checked", "violations", "unknown", "findings"}
     assert payload["summary"]["violations"] == 0
+
+
+# ------------------------------------------- норма и прибор не расходятся (Е1, Е2)
+
+
+def test_rule_codes_match_registry():
+    """Каждое правило с пометкой «Прибор» имеет проверку, и наоборот.
+
+    Расхождение текста и прибора чинится в приборе; тест ловит его сразу, а не
+    через полгода чтения (правило Е1: одно знание — одно место).
+    """
+    import re
+
+    from repo_lint import REGISTRY
+
+    norm = (ROOT / "repo-standard.md").read_text(encoding="utf-8")
+    documented = {m.split()[0] for m in re.findall(r"Прибор: `([^`]+)`", norm)}
+    registered = {spec.code for spec in REGISTRY} - {"Х1"}
+    assert documented == registered, {
+        "в норме, но не в приборе": sorted(documented - registered),
+        "в приборе, но не в норме": sorted(registered - documented),
+    }
+
+
+def test_check_titles_are_unique():
+    from repo_lint import REGISTRY
+
+    codes = [spec.code for spec in REGISTRY]
+    assert len(codes) == len(set(codes))

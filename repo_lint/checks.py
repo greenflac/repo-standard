@@ -72,9 +72,10 @@ AUTHOR_STAMP_RE = re.compile(
 TODO_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX|ВРЕМЕННО|ЗАГЛУШКА)\b")
 # Метка, взятая в кавычки или обратные кавычки, либо стоящая в альтернативе регулярного
 # выражения, — это разговор о метке (норма, тест, сам прибор), а не незакрытая работа.
+_MARKS = "TODO|FIXME|HACK|XXX|ВРЕМЕННО|ЗАГЛУШКА"
 TODO_MENTION_RE = re.compile(
-    r"([`'\"][^`'\"]*\b(TODO|FIXME|HACK|XXX)\b[^`'\"]*[`'\"]|\|\s*(TODO|FIXME|HACK|XXX)\s*\||"
-    r"\((TODO|FIXME|HACK|XXX)\||\b(TODO|FIXME|HACK|XXX)\)\B)"
+    rf"([`'\"][^`'\"]*\b({_MARKS})\b[^`'\"]*[`'\"]"
+    rf"|\|\s*({_MARKS})\s*\||\(({_MARKS})\||\b({_MARKS})\)\B)"
 )
 DEBT_RE = re.compile(r"\bDEBT\(\d{4}-\d{2}-\d{2}\)")
 CODE_LOOKING_RE = re.compile(
