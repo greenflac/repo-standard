@@ -44,7 +44,18 @@ GENERATED_PATTERNS = (
     r"\.log$",
 )
 
-COMMENT_RE = re.compile(r"^\s*(#|//|/\*|\*(?!/)|<!--)\s?(?P<body>.*?)\s*(\*/|-->)?\s*$")
+COMMENT_RE = re.compile(r"^\s*(?P<kind>#|//|/\*|\*(?!/)|<!--)\s?(?P<body>.*?)\s*(\*/|-->)?\s*$")
+# Строка внутри блочного комментария — чаще проза документации, чем брошенный код,
+# поэтому правила К1 и К2 смотрят только на однострочные комментарии.
+LINE_COMMENT_KINDS = ("#", "//")
+# Глаголы пересказа: комментарий, который называет действие следующей строки её же словами.
+RESTATE_VERB_RE = re.compile(
+    r"^(set|get|增|increment|decrement|add|call|return|init|initialize|create|delete|remove|"
+    r"update|check|loop|iterate|assign|define|"
+    r"устанавлива\w+|увеличива\w+|уменьша\w+|вызыва\w+|возвраща\w+|создаём|создаем|"
+    r"создать|удаля\w+|обновля\w+|проверя\w+|присваива\w+|объявля\w+)\b",
+    re.IGNORECASE,
+)
 CHATTER_RE = re.compile(
     r"(как договорились|как просили|как обсуждали|теперь (?:исправлено|работает|стало)|"
     r"я (?:добавил|исправил|изменил|убрал|сделал)|мы (?:добавили|исправили|решили)|"
@@ -59,10 +70,18 @@ AUTHOR_STAMP_RE = re.compile(
     re.IGNORECASE,
 )
 TODO_RE = re.compile(r"\b(TODO|FIXME|HACK|XXX|ВРЕМЕННО|ЗАГЛУШКА)\b")
+# Метка, взятая в кавычки или обратные кавычки, либо стоящая в альтернативе регулярного
+# выражения, — это разговор о метке (норма, тест, сам прибор), а не незакрытая работа.
+TODO_MENTION_RE = re.compile(
+    r"([`'\"][^`'\"]*\b(TODO|FIXME|HACK|XXX)\b[^`'\"]*[`'\"]|\|\s*(TODO|FIXME|HACK|XXX)\s*\||"
+    r"\((TODO|FIXME|HACK|XXX)\||\b(TODO|FIXME|HACK|XXX)\)\B)"
+)
 DEBT_RE = re.compile(r"\bDEBT\(\d{4}-\d{2}-\d{2}\)")
 CODE_LOOKING_RE = re.compile(
-    r"(=>|;\s*$|\{\s*$|\}\s*$|^\s*(if|for|while|return|function|def|const|let|var|echo|print)\b"
-    r"|\w+\s*\([^)]*\)\s*;?\s*$|\w+\s*=\s*[^=\s].*$)"
+    r"(;\s*$|\{\s*$|\}\s*$"
+    r"|^\s*(if|for|while|return|function|def|const|let|var|echo|print|import|from)\b.*[:;)]\s*$"
+    r"|^\s*\w+\s*=\s*[^=\s].*;\s*$"
+    r"|^\s*\w+(\.\w+)*\([^)]*\)\s*;\s*$)"
 )
 SECRET_RE = re.compile(
     r"(-----BEGIN (?:RSA |OPENSSH |EC |DSA |PGP )?PRIVATE KEY-----"
@@ -98,10 +117,12 @@ def _lines(repo: Repo, rel: str) -> list[str]:
     return text.splitlines() if text is not None else []
 
 
-def _comment_bodies(repo: Repo, rel: str):
+def _comment_bodies(repo: Repo, rel: str, kinds: tuple[str, ...] | None = None):
     for number, line in enumerate(_lines(repo, rel), start=1):
         match = COMMENT_RE.match(line)
         if match and match.group("body"):
+            if kinds is not None and match.group("kind") not in kinds:
+                continue
             yield number, line, match.group("body")
 
 
@@ -195,8 +216,10 @@ def comment_restates_code(repo: Repo, spec: CheckSpec) -> CheckResult:
     findings = []
     for rel in _code_files(repo):
         lines = _lines(repo, rel)
-        for number, _raw, body in _comment_bodies(repo, rel):
+        for number, _raw, body in _comment_bodies(repo, rel, LINE_COMMENT_KINDS):
             if number >= len(lines):
+                continue
+            if not RESTATE_VERB_RE.match(body):
                 continue
             following = lines[number].strip()
             if not following or COMMENT_RE.match(following):
@@ -215,7 +238,7 @@ def comment_restates_code(repo: Repo, spec: CheckSpec) -> CheckResult:
 def commented_out_code(repo: Repo, spec: CheckSpec) -> CheckResult:
     findings = []
     for rel in _code_files(repo):
-        for number, _raw, body in _comment_bodies(repo, rel):
+        for number, _raw, body in _comment_bodies(repo, rel, LINE_COMMENT_KINDS):
             if len(body) < 6 or TODO_RE.search(body) or DEBT_RE.search(body):
                 continue
             if CODE_LOOKING_RE.search(body) and not re.search(r"[а-яА-Я]{4,}", body):
@@ -248,7 +271,11 @@ def todo_without_debt(repo: Repo, spec: CheckSpec) -> CheckResult:
     findings = []
     for rel in repo.by_suffix(*TEXT_SUFFIXES):
         for number, line in enumerate(_lines(repo, rel), start=1):
-            if TODO_RE.search(line) and not DEBT_RE.search(line):
+            if not TODO_RE.search(line) or DEBT_RE.search(line):
+                continue
+            if TODO_MENTION_RE.search(line):
+                continue
+            if True:
                 findings.append(Finding(rel, number, f"метка без даты: {line.strip()[:60]}"))
     return CheckResult.of(spec, findings)
 
@@ -392,7 +419,7 @@ def secrets(repo: Repo, spec: CheckSpec) -> CheckResult:
 @check("Б2", "пример конфигурации есть", "base")
 def config_example(repo: Repo, spec: CheckSpec) -> CheckResult:
     uses_env = any(
-        re.search(r"(getenv|os\.environ|process\.env|\$_ENV|\benv\()", repo.text(f) or "")
+        re.search(r"(getenv\(|os\.environ[.\[]|process\.env\.|\$_ENV\[)", repo.text(f) or "")
         for f in _code_files(repo)
     )
     if not uses_env:
