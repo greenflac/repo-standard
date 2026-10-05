@@ -1,0 +1,7 @@
+{
+  "hooks": {
+    "SessionStart": [{"hooks": [{"type": "command", "command": "echo \"probe SessionStart remote=$CLAUDE_CODE_REMOTE dir=$CLAUDE_PROJECT_DIR\" >> /tmp/harness-probe.log"}]}],
+    "UserPromptSubmit": [{"hooks": [{"type": "command", "command": "echo probe UserPromptSubmit >> /tmp/harness-probe.log"}]}],
+    "PostToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": "echo probe PostToolUse-Bash >> /tmp/harness-probe.log"}]}]
+  }
+}
